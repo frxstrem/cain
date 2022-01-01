@@ -1,0 +1,17 @@
+[package]
+name = "cain"
+version = "0.0.1"
+edition = "2021"
+authors = ["Fredrik Østrem <frx.apps@gmail.com>"]
+license = "MIT"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0.34"
+quote = "1.0.10"
+syn = { version = "1.0.84", features = [
+  "full",
+  "visit-mut",
+] }
