@@ -1,6 +1,6 @@
 [package]
 name = "cain"
-version = "0.0.1"
+version = "0.1.0"
 description = "Procedural macro to transform sequential branches into nested branches"
 repository = "https://github.com/frxstrem/cain"
 edition = "2021"
