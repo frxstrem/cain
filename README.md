@@ -7,7 +7,7 @@ having to use runtime trait objects like `Box<dyn Trait>`.
 The disadvantage of this is that the amount of code grows exponentially relative
 to the number of sequential branches in the expanded code.
 
-# MSVC
+# MSRV
 
 The minimal supported Rust version for `cain` is 1.57.0 (December 2021).
 
