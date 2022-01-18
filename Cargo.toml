@@ -2,7 +2,6 @@
 name = "cain"
 version = "0.0.1"
 description = "Procedural macro to transform sequential branches into nested branches"
-documentation = "https://docs.rs/cain/latest/cain/"
 repository = "https://github.com/frxstrem/cain"
 edition = "2021"
 authors = ["Fredrik Østrem <frx.apps@gmail.com>"]
