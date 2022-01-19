@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::iter::once;
 
 use proc_macro2::TokenStream;
@@ -9,7 +10,7 @@ use syn::Block;
 use crate::placeholder::{
     replace_with_placeholder, wrap_placeholder_block_mut, wrap_placeholder_expr_mut, PlaceholderId,
 };
-use crate::util::drain_filter;
+use crate::util::{drain_filter, unique_ident};
 
 pub fn cain(input: TokenStream) -> syn::Result<TokenStream> {
     let stmts = Block::parse_within.parse2(input)?;
@@ -90,11 +91,47 @@ fn chain_expr(
             match &mut branch_expr {
                 syn::Expr::Match(match_expr) => {
                     for arm in &mut match_expr.arms {
+                        let mut pat_idents = BTreeMap::new();
+                        replace_pat_idents(&mut arm.pat, &mut pat_idents)?;
+
+                        if !pat_idents.is_empty() {
+                            let expr_bindings = pat_idents.iter().map(
+                                |(old, (new, mutability))| quote! { let #mutability #old = #new; },
+                            );
+
+                            let arm_body = &arm.body;
+                            arm.body = syn::parse_quote! {
+                                {
+                                    #( #expr_bindings )*
+                                    #arm_body
+                                }
+                            };
+                        }
+
                         wrap_placeholder_expr_mut(&mut arm.body, branch_id, expr.clone())?;
                     }
                 }
 
                 syn::Expr::If(if_expr) => {
+                    if let syn::Expr::Let(expr_let) = &mut *if_expr.cond {
+                        let mut pat_idents = BTreeMap::new();
+                        replace_pat_idents(&mut expr_let.pat, &mut pat_idents)?;
+
+                        if !pat_idents.is_empty() {
+                            let expr_bindings = pat_idents.iter().map(
+                                |(old, (new, mutability))| quote! { let #mutability #old = #new; },
+                            );
+
+                            let then_branch = &if_expr.then_branch;
+                            if_expr.then_branch = syn::parse_quote! {
+                                {
+                                    #( #expr_bindings )*
+                                    #then_branch
+                                }
+                            };
+                        }
+                    }
+
                     wrap_placeholder_block_mut(&mut if_expr.then_branch, branch_id, expr.clone())?;
 
                     if let Some((_, else_branch)) = &mut if_expr.else_branch {
@@ -164,5 +201,70 @@ impl VisitMut for Visitor {
 
             _ => syn::visit_mut::visit_expr_mut(self, i),
         }
+    }
+}
+
+fn replace_pat_idents(
+    pat: &mut syn::Pat,
+    ident_map: &mut BTreeMap<syn::Ident, (syn::Ident, Option<syn::token::Mut>)>,
+) -> syn::Result<()> {
+    match pat {
+        syn::Pat::Ident(pat_ident) => {
+            let (ident, mutability) = ident_map
+                .entry(pat_ident.ident.clone())
+                .or_insert_with(|| (unique_ident(), None));
+
+            pat_ident.ident = ident.clone();
+
+            if mutability.is_none() {
+                *mutability = pat_ident.mutability.take();
+            }
+
+            if let Some((_, subpat)) = &mut pat_ident.subpat {
+                replace_pat_idents(&mut *subpat, ident_map)?
+            }
+
+            Ok(())
+        }
+
+        syn::Pat::Lit(_)
+        | syn::Pat::Path(_)
+        | syn::Pat::Range(_)
+        | syn::Pat::Rest(_)
+        | syn::Pat::Wild(_) => Ok(()),
+
+        syn::Pat::Box(pat) => replace_pat_idents(&mut pat.pat, ident_map),
+        syn::Pat::Or(pat_or) => pat_or
+            .cases
+            .iter_mut()
+            .try_for_each(|pat| replace_pat_idents(pat, ident_map)),
+        syn::Pat::Reference(pat_ref) => replace_pat_idents(&mut pat_ref.pat, ident_map),
+        syn::Pat::Slice(pat_slice) => pat_slice
+            .elems
+            .iter_mut()
+            .try_for_each(|pat| replace_pat_idents(pat, ident_map)),
+        syn::Pat::Struct(pat_struct) => pat_struct
+            .fields
+            .iter_mut()
+            .try_for_each(|pat_field| replace_pat_idents(&mut pat_field.pat, ident_map)),
+        syn::Pat::Tuple(pat_tuple) => pat_tuple
+            .elems
+            .iter_mut()
+            .try_for_each(|pat| replace_pat_idents(pat, ident_map)),
+        syn::Pat::TupleStruct(pat_tuple_struct) => pat_tuple_struct
+            .pat
+            .elems
+            .iter_mut()
+            .try_for_each(|pat| replace_pat_idents(pat, ident_map)),
+        syn::Pat::Type(pat_type) => replace_pat_idents(&mut pat_type.pat, ident_map),
+
+        syn::Pat::Macro(_) => Err(syn::Error::new_spanned(
+            pat,
+            "cain! does not support macros in patterns",
+        )),
+        _ => Err(syn::Error::new_spanned(
+            pat,
+            "cain! does not support this pattern",
+        )),
     }
 }
