@@ -90,43 +90,108 @@ fn chain_expr(
         .try_fold(expr, |expr, (branch_id, mut branch_expr)| {
             match &mut branch_expr {
                 syn::Expr::Match(match_expr) => {
-                    for arm in &mut match_expr.arms {
+                    let old_arms = std::mem::take(&mut match_expr.arms);
+
+                    for mut arm in old_arms {
+                        if let Some((if_, _)) = &arm.guard {
+                            return Err(syn::Error::new_spanned(if_, "cain! dos not support match guards"));
+                        }
+
+                        let unreachable_arm = {
+                            let mut arm = arm.clone();
+                            arm.body = syn::parse_quote! { unreachable!() };
+                            arm.attrs.insert(
+                                0,
+                                syn::parse_quote! {
+                                    #[allow(unreachable_patterns, unused_variables)]
+                                },
+                            );
+                            arm
+                        };
+
                         let mut pat_idents = BTreeMap::new();
                         replace_pat_idents(&mut arm.pat, &mut pat_idents)?;
 
                         if !pat_idents.is_empty() {
-                            let expr_bindings = pat_idents.iter().map(
-                                |(old, (new, mutability))| quote! { let #mutability #old = #new; },
-                            );
+                            let old_idents = pat_idents.keys().collect::<Vec<_>>();
+                            let new_idents = pat_idents.values().map(|(ident, _)| ident).collect::<Vec<_>>();
+                            let mutability = pat_idents.values().map(|(_, mutability)| mutability).collect::<Vec<_>>();
+
+                            let guard = pat_idents
+                                .iter()
+                                .map(|(old, (new, _))| -> syn::Expr {
+                                    syn::parse_quote! {
+                                        {
+                                            #[allow(unused_variables, unreachable_patterns)]
+                                            {
+                                                matches!(&#new, #old)
+                                            }
+                                        }
+                                    }
+                                })
+                                .collect::<syn::punctuated::Punctuated<syn::Expr, syn::Token![&&]>>();
+
+
+                                arm.guard = Some((
+                                    syn::token::If::default(),
+                                    syn::parse_quote! { #guard  },
+                                ));
 
                             let arm_body = &arm.body;
                             arm.body = syn::parse_quote! {
-                                {
-                                    #( #expr_bindings )*
+                                if let ( #( #mutability #old_idents, )* ) = ( #( #new_idents, )* ) {
                                     #arm_body
+                                } else {
+                                    unreachable!()
                                 }
                             };
                         }
 
                         wrap_placeholder_expr_mut(&mut arm.body, branch_id, expr.clone())?;
+
+                        match_expr.arms.push(arm);
+                        if !pat_idents.is_empty() {
+                            match_expr.arms.push(unreachable_arm);
+                        }
                     }
                 }
 
                 syn::Expr::If(if_expr) => {
+                    let mut guard = None;
+
                     if let syn::Expr::Let(expr_let) = &mut *if_expr.cond {
                         let mut pat_idents = BTreeMap::new();
                         replace_pat_idents(&mut expr_let.pat, &mut pat_idents)?;
 
                         if !pat_idents.is_empty() {
-                            let expr_bindings = pat_idents.iter().map(
-                                |(old, (new, mutability))| quote! { let #mutability #old = #new; },
+                            guard = Some(
+                                pat_idents
+                                    .iter()
+                                    .map(|(old, (new, _))| -> syn::Expr {
+                                        syn::parse_quote! {
+                                            {
+                                                #[allow(unused_variables, unreachable_patterns)]
+                                                {
+                                                    matches!(&#new, #old)
+                                                }
+                                            }
+                                        }
+                                    })
+                                    .collect::<syn::punctuated::Punctuated<syn::Expr, syn::Token![&&]>>()
                             );
+
+                            let old_idents = pat_idents.keys();
+                            let new_idents = pat_idents.values().map(|(ident, _)| ident);
+                            let mutability = pat_idents.values().map(|(_, mutability)| mutability);
 
                             let then_branch = &if_expr.then_branch;
                             if_expr.then_branch = syn::parse_quote! {
                                 {
-                                    #( #expr_bindings )*
-                                    #then_branch
+                                    if let ( #( #mutability #old_idents, )* ) = ( #( #new_idents, )* ) {
+                                        #then_branch
+                                    } else {
+                                        unreachable!()
+                                    }
                                 }
                             };
                         }
@@ -136,6 +201,19 @@ fn chain_expr(
 
                     if let Some((_, else_branch)) = &mut if_expr.else_branch {
                         wrap_placeholder_expr_mut(else_branch, branch_id, expr)?;
+                    }
+
+                    if let Some(guard) = guard {
+                        let then_branch = &if_expr.then_branch;
+                        if_expr.then_branch = if let Some((_, else_branch)) = &if_expr.else_branch {
+                            syn::parse_quote! {
+                                { if #guard #then_branch else #else_branch }
+                            }
+                        } else {
+                            syn::parse_quote! {
+                                { if #guard #then_branch }
+                            }
+                        };
                     }
                 }
 
@@ -217,7 +295,7 @@ fn replace_pat_idents(
             pat_ident.ident = ident.clone();
 
             if mutability.is_none() {
-                *mutability = pat_ident.mutability.take();
+                *mutability = pat_ident.mutability;
             }
 
             if let Some((_, subpat)) = &mut pat_ident.subpat {

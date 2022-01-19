@@ -68,7 +68,13 @@ test_cain_macro! {
         },
 
     if_let_ident: { 1 + if let x = z { a + x } }
-        => { if let __cain_ident__0 = z { 1 + { let x = __cain_ident__0; { a + x } } } },
+        => {
+            if let __cain_ident__0 = z {
+                if { #[allow(unused_variables, unreachable_patterns)] { matches!(&__cain_ident__0, x) } } {
+                    1 + { if let (x,) = (__cain_ident__0,) { { a + x } } else { unreachable!() } }
+                }
+            }
+        },
 
     match_simple: { 1 + match x { 1 => a, _ => b } }
         => { match x { 1 => 1 + a, _ => 1 + b } },
@@ -90,41 +96,67 @@ test_cain_macro! {
     match_ident_pat: { 1 + match x { r => a + r } }
         => {
             match x {
-                __cain_ident__0 => 1 + { let r = __cain_ident__0; a + r }
+                __cain_ident__0
+                    if { #[allow(unused_variables, unreachable_patterns)] { matches!(&__cain_ident__0, r) } }
+                    => 1 + if let (r,) = (__cain_ident__0,) { a + r } else { unreachable!() },
+                #[allow(unreachable_patterns, unused_variables)] r => unreachable!()
             }
         },
 
     match_ident_pat_2: { 1 + match x { Ok(r) => a + r, Err(r) => b + r } }
         => {
             match x {
-                Ok(__cain_ident__0) => 1 + { let r = __cain_ident__0; a + r },
-                Err(__cain_ident__1) => 1 + { let r = __cain_ident__1; b + r }
+                Ok(__cain_ident__0)
+                    if { #[allow(unused_variables, unreachable_patterns)] { matches!(&__cain_ident__0, r) } }
+                    => 1 + if let (r,) = (__cain_ident__0,) { a + r } else { unreachable!() },
+                #[allow(unreachable_patterns, unused_variables)] Ok(r) => unreachable!(),
+                Err(__cain_ident__1)
+                    if { #[allow(unused_variables, unreachable_patterns)] { matches!(&__cain_ident__1, r) } }
+                    => 1 + if let (r,) = (__cain_ident__1,) { b + r } else { unreachable!() },
+                #[allow(unreachable_patterns, unused_variables)] Err(r) => unreachable!()
             }
         },
 
     match_ident_pat_3: { 1 + match x { (r, s) => r + s } }
         => {
             match x {
-                (__cain_ident__0, __cain_ident__1) => 1 + { let r = __cain_ident__0; let s = __cain_ident__1; r + s }
+                (__cain_ident__0, __cain_ident__1)
+                    if { #[allow(unused_variables, unreachable_patterns)] { matches!(&__cain_ident__0, r) } }
+                        && { #[allow(unused_variables, unreachable_patterns)] { matches!(&__cain_ident__1, s) } }
+                    => 1 + if let (r, s,) = (__cain_ident__0, __cain_ident__1,) { r + s } else { unreachable!() },
+                #[allow(unreachable_patterns, unused_variables)] (r, s) => unreachable!()
             }
         },
 
     match_ident_pat_4: { 1 + match x { r @ s => r + s } }
         => {
             match x {
-                __cain_ident__0 @ __cain_ident__1 => 1 + { let r = __cain_ident__0; let s = __cain_ident__1; r + s }
+                __cain_ident__0 @ __cain_ident__1
+                    if { #[allow(unused_variables, unreachable_patterns)] { matches!(&__cain_ident__0, r) } }
+                        && { #[allow(unused_variables, unreachable_patterns)] { matches!(&__cain_ident__1, s) } }
+                    => 1 + if let (r, s,) = (__cain_ident__0, __cain_ident__1,) { r + s } else { unreachable!() },
+                #[allow(unreachable_patterns, unused_variables)] r @ s => unreachable!()
             }
         },
 
     match_ident_double: { 1 + match x { r => a + r, _ => c } + match y { r => b + r, _ => c } }
         => {
             match x {
-                __cain_ident__1 => match y {
-                    __cain_ident__0 => 1 + { let r = __cain_ident__1; a + r } + { let r = __cain_ident__0; b + r },
-                    _ => 1 + { let r = __cain_ident__1; a + r } + c
-                },
+                __cain_ident__1
+                    if { #[allow(unused_variables, unreachable_patterns)] { matches!(&__cain_ident__1, r) } }
+                    => match y {
+                        __cain_ident__0
+                            if { #[allow(unused_variables, unreachable_patterns)] { matches!(&__cain_ident__0, r) } }
+                            => 1 + if let (r,) = (__cain_ident__1,) { a + r } else { unreachable!() } + if let (r,) = (__cain_ident__0,) { b + r } else { unreachable!() },
+                        #[allow(unreachable_patterns, unused_variables)] r => unreachable!(),
+                        _ => 1 + if let (r,) = (__cain_ident__1,) { a + r } else { unreachable!() } + c
+                    },
+                #[allow(unreachable_patterns, unused_variables)] r => unreachable!(),
                 _ => match y {
-                    __cain_ident__0 => 1 + c + { let r = __cain_ident__0; b + r },
+                    __cain_ident__0
+                        if { #[allow(unused_variables, unreachable_patterns)] { matches!(&__cain_ident__0, r) } }
+                        => 1 + c + if let (r,) = (__cain_ident__0,) { b + r } else { unreachable!() },
+                    #[allow(unreachable_patterns, unused_variables)] r => unreachable!(),
                     _ => 1 + c + c
                 }
             }
