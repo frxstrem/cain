@@ -1,5 +1,7 @@
 use crate::macros::cain;
 
+use pretty_assertions::assert_eq;
+
 macro_rules! test_cain_macro {
     (
         $(
@@ -15,7 +17,7 @@ macro_rules! test_cain_macro {
 
                     let actual_output = cain(input).unwrap();
 
-                    assert_eq!(actual_output.to_string(), expected_output.to_string());
+                    assert_eq!(expected_output.to_string(), actual_output.to_string());
                 })
             }
         )*
