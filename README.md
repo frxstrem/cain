@@ -1,3 +1,7 @@
+> **Note!** This crate is experimental and under development. It may include bugs that alter the behavior of your code
+> in unexpected ways. You should review the expanded code from the macro before use, and report any bugs you may find
+> to the bug tracker at https://github.com/frxstrem/cain/issues.
+
 The [`cain!`] macro is a macro that rewrites sequential Rust branch statements into nested branches.
 
 This can be useful in cases where you want to have branches with different types
